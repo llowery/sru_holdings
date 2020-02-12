@@ -1,11 +1,11 @@
 # Set institution code
-INST="01ALLIANCE_WSU"
+INST="01ALLIANCE_INST"
 
 # Set input filename
-FILE="WS7input05_small.txt"
+FILE="filename.txt"
 
 # Set email address
-EMAIL="llowery@orbiscascade.org"
+EMAIL="example@domain.edu"
 
 # Send output headings
 echo "OCN;No. of IZ Bibs;MMS ID;Library;Carrier" | tee -a liboutput.txt
