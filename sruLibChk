@@ -1,0 +1,57 @@
+# Set institution code
+INST="01ALLIANCE_WSU"
+
+# Set input filename
+FILE="WS7input05_small.txt"
+
+# Set email address
+EMAIL="llowery@orbiscascade.org"
+
+# Send output headings
+echo "OCN;No. of IZ Bibs;MMS ID;Library;Carrier" | tee -a liboutput.txt
+
+# reads designated .txt file and stores each line sequentially in OCLC variable
+
+for OCLC in $(cat $FILE)
+do
+	# strips everything except for numbers, (, )< O, C, L, o
+	OCLC=$(sed 's/[^()OCoL0-9]//g' <<< "$OCLC")
+
+	# build search string
+	searchstring="https://na01.alma.exlibrisgroup.com/view/sru/$INST?version=1.2&operation=searchRetrieve&query=alma.other_system_number_035_az=$OCLC"
+
+	# store result from search
+	RESULT=$(curl -s "$searchstring" | sed 's/ xmlns="[^"]*"//g' | sed -E 's/([0-9])>/\1/g' | sed -E 's/(&(amp|apos|gt|lt));*//g')
+
+	# capture number of records found
+	RECORDSFOUND=$(echo $RESULT | xmlstarlet sel -T -t -m '/searchRetrieveResponse/numberOfRecords' -v ".")
+
+	# capture mmsid 
+	RECORDIDENTIFIER=$(echo $RESULT | xmlstarlet sel -T -t -m '/searchRetrieveResponse/records/record' -v 'recordIdentifier' -o ";")
+	RECORDIDENTIFIER=$(sed 's/;$//' <<< "$RECORDIDENTIFIER")
+
+	# capture library and carrier IF records were found and print output
+	if [ $RECORDSFOUND -eq '0' ] # Record not found, set Record ID and Library to "none"
+	then
+		RECORDIDENTIFIER="none"
+		LIBRARY="none"
+		echo "$OCLC;$RECORDSFOUND;$RECORDIDENTIFIER;$LIBRARY" | tee -a liboutput.txt
+	elif [ $RECORDSFOUND -gt '0' ] #split string of IDs into an array and run secondary search on each ID in the array
+	then
+		IFS=';' #set semicolon as delimiter
+		read -ra RECORDIDS <<< $RECORDIDENTIFIER 
+		for i in "${RECORDIDS[@]}"; do 
+			LIBRARY=$(echo $RESULT | xmlstarlet sel -T -t -m "/searchRetrieveResponse/records/record[recordIdentifier='$i']/recordData/record/datafield[@tag='AVA']" -v 'subfield[@code="q"]' -o ",")
+			LIBRARY=$(sed 's/,$//' <<< "$LIBRARY")
+			CARRIER=$(echo $RESULT | xmlstarlet sel -T -t -m "/searchRetrieveResponse/records/record[recordIdentifier='$i']/recordData/record/datafield[@tag='338']"  -v 'subfield[@code="a"]' -o ",")
+			CARRIER=$(sed 's/,$//' <<< "$CARRIER")
+			echo "$OCLC;$RECORDSFOUND;$i;$LIBRARY;$CARRIER" | tee -a liboutput.txt
+		done
+	else
+		echo "$OCLC;Error" | tee -a liboutput.txt
+	fi
+
+done
+
+#Send completion email
+echo "The sruLibChk script has finished scanning your file." | mail -s "SRU scan complete!" $EMAIL
